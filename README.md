@@ -1,27 +1,27 @@
 # Sage PocketBase
 
-## v0.0.1
+## v0.1.0
 
 Generic, reusable PocketBase Docker image published to GHCR. Each project layers its own hooks, migrations, and public assets on top via CapRover's `captain-definition`.
 
 ## Architecture
 
 ```
-┌──────────────────────────────┐
-│  Dockerfile (generic)        │  → ghcr.io/sage-is/db-sage-pb:latest
-│  Alpine + PocketBase binary  │     reusable by any project
-└──────────────────────────────┘
-               │ FROM
-┌──────────────▼───────────────┐
-│  captain-definition          │  → CapRover deploy (project-specific)
-│  dockerfileLines:            │
-│    COPY pb_hooks/            │     hooks, migrations, public assets
-│    COPY pb_migrations/       │
-│    COPY pb_public/           │
-└──────────────────────────────┘
+┌─────────────────────────────────────────────┐
+│  Dockerfile (3-stage build from source)     │
+│  1. node:20-alpine — build UI with branding │    Built from PocketBase source
+│  2. golang:1.25    — compile Go binary      │    with Sage.is logo + favicons
+│  3. alpine:3.21    — runtime (~15 MB)       │  → ghcr.io/sage-is/db-sage-pb:latest
+└─────────────────────────────────────────────┘
+                    │ FROM
+┌───────────────────▼─────────────────────────┐
+│  captain-definition                         │  → CapRover deploy (project-specific)
+│  dockerfileLines:                           │
+│    COPY pb_hooks/ pb_migrations/ pb_public/ │     hooks, migrations, public assets
+└─────────────────────────────────────────────┘
 ```
 
-The generic image contains only PocketBase on Alpine — no application code. Projects customize by adding:
+The generic image is built from PocketBase source with Sage.is branding (logo, favicons). It contains no application code. Projects customize by adding:
 
 - `pb_hooks/` — JavaScript business logic (webhooks, email notifications, custom API routes)
 - `pb_migrations/` — Collection schemas and seed data
@@ -133,16 +133,26 @@ This repo's hooks and migrations implement the **Sage Hardware Order Backend** f
 **Environment variables:**
 - `RESEND_API_KEY` — Resend API key for email notifications (optional, skips email if unset)
 
-## Theming & Customization Roadmap
+## Branding & Customization
 
-The PocketBase admin UI (`/_/`) is a Svelte/Vite app embedded in the binary. It **cannot be themed** without rebuilding PocketBase from source.
+The PocketBase admin UI (`/_/`) is a Svelte/Vite app embedded in the binary. This image builds PocketBase **from source** with custom Sage.is branding baked in.
 
-**What works today:**
+**What's customized:**
+- Admin UI logo (`/_/images/logo.svg`) — Sage.is branded
+- Favicons — custom sage leaf icons in all sizes
+- Source: `branding/` directory in this repo
+
+**To change the branding:**
+1. Replace files in `branding/logo.svg` and `branding/favicon/`
+2. Rebuild: `make it_build`
+3. The Dockerfile clones PocketBase source, swaps in your branding, and builds from scratch
+
+**Other customization:**
 - `pb_public/` serves a fully custom public-facing UI (everything except `/_/`)
 - Custom API routes via hooks in `pb_hooks/`
 - CDN/reverse proxy in front for caching and headers
 
 **Future options:**
-- **Nginx rewrite layer** — add nginx reverse proxy for URL rewrites, custom headers, and response body rewriting to inject custom CSS/branding into the admin UI
-- **Custom PocketBase binary** — fork PocketBase, modify the admin UI source in `/ui` (Svelte/Vite), rebuild the binary with branding changes baked in
+- **Nginx rewrite layer** — add nginx reverse proxy for URL rewrites, custom headers, and response body rewriting to inject custom CSS into the admin UI
+- **Full admin UI modifications** — beyond the logo, modify Svelte components in PocketBase's `ui/src/` directory for deeper customization
 - **Performance benchmarking** — document `pb_public/` throughput characteristics for static hosting use cases
