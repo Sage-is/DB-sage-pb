@@ -1,0 +1,11 @@
+# PocketBase binary (download per platform)
+pocketbase
+
+# PocketBase data (generated at runtime)
+pb_data/
+
+# Environment
+.env
+
+# OS files
+.DS_Store

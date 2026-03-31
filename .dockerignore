@@ -1,0 +1,23 @@
+# Local PocketBase binary (downloaded in Docker build)
+pocketbase
+
+# Runtime data
+pb_data/
+
+# Project-specific files (not needed in generic image)
+pb_hooks/
+pb_migrations/
+pb_public/
+captain-definition
+Makefile
+docker-compose.yml
+
+# Git
+.git/
+.gitignore
+
+# OS
+.DS_Store
+
+# Docs
+README.md

@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 2,
+  "dockerfileLines": [
+    "FROM ghcr.io/sage-is/db-sage-pb:latest",
+    "COPY pb_hooks/ /app/pb_hooks/",
+    "COPY pb_migrations/ /app/pb_migrations/",
+    "COPY pb_public/ /app/pb_public/",
+    "CMD [\"pocketbase\", \"serve\", \"--http=0.0.0.0:8090\", \"--dir=/app/pb_data\", \"--hooksDir=/app/pb_hooks\", \"--migrationsDir=/app/pb_migrations\", \"--publicDir=/app/pb_public\"]"
+  ]
+}
