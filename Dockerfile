@@ -28,8 +28,12 @@ WORKDIR /src/ui
 RUN npm ci
 
 # Replace branding assets with Sage.is versions
-COPY branding/logo.svg /src/ui/public/images/logo.svg
-COPY branding/favicon/ /src/ui/public/images/favicon/
+COPY branding/ /tmp/branding/
+RUN cp /tmp/branding/logo.svg /src/ui/public/images/logo.svg && \
+    cp /tmp/branding/favicon/* /src/ui/public/images/favicon/ && \
+    echo "=== Branding files replaced ===" && \
+    ls -la /src/ui/public/images/logo.svg && \
+    ls -la /src/ui/public/images/favicon/
 
 # Build the admin UI (output: /src/ui/dist/)
 RUN npm run build
@@ -51,7 +55,7 @@ RUN go mod download
 
 # Build the PocketBase binary (statically linked, no CGO)
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} \
-    go build -o /pocketbase ./cmd/base
+    go build -o /pocketbase ./examples/base
 
 # =============================================================================
 # Stage 3: RUNTIME — minimal Alpine with just the binary
