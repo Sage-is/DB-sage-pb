@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 40" width="120" height="40">
+  <defs>
+    <linearGradient id="sage-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#4a9e6f"/>
+      <stop offset="100%" style="stop-color:#2d7a4f"/>
+    </linearGradient>
+  </defs>
+  <!-- Sage leaf mark -->
+  <path d="M8 32 C8 32, 4 20, 12 12 C16 8, 22 6, 26 10 C30 14, 28 22, 22 26 C18 29, 12 30, 8 32Z" fill="url(#sage-grad)" opacity="0.9"/>
+  <path d="M12 28 C14 22, 18 16, 24 12" stroke="#fff" stroke-width="1.5" fill="none" stroke-linecap="round" opacity="0.7"/>
+  <path d="M14 26 C15 23, 17 19, 20 16" stroke="#fff" stroke-width="1" fill="none" stroke-linecap="round" opacity="0.5"/>
+  <!-- Sage text -->
+  <text x="34" y="27" font-family="system-ui, -apple-system, sans-serif" font-weight="700" font-size="20" fill="#1a1a2e" letter-spacing="-0.5">Sage</text>
+  <!-- PB badge -->
+  <rect x="88" y="10" width="28" height="20" rx="4" fill="#1a1a2e"/>
+  <text x="102" y="25" font-family="system-ui, -apple-system, sans-serif" font-weight="600" font-size="12" fill="#fff" text-anchor="middle">PB</text>
+</svg>
