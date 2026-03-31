@@ -199,13 +199,23 @@ it_build_multi_arch_push_GHCR: ghcr_login
 show_version:
 	@echo "Current version: $(IMAGE_TAG)"
 
+bump_release_version:
+	@if [ -z "$(RELEASE_VERSION)" ]; then \
+		echo "Error: RELEASE_VERSION not defined. Are you on a release/ or hotfix/ branch?"; \
+		exit 1; \
+	fi
+	@echo "Bumping version to $(RELEASE_VERSION)..."
+	@python3 -c "import re; f='README.md'; ver='$(RELEASE_VERSION)'.lstrip('v'); c=open(f).read(); n=re.sub(r'^## v.*', f'## v{ver}', c, count=1, flags=re.MULTILINE); open(f,'w').write(n); print(f'Updated {f}')"
+	@echo "Version bumped to $(RELEASE_VERSION)"
+
 # Initial release (one-time, when no tags exist yet)
 first_release: require_gitflow_next
 	git flow release start 0.0.1
 	@echo ""
 	@echo "=== First release branch created (release/0.0.1) ==="
 	@echo "Next steps:"
-	@echo "  1. make release_and_push_GHCR    # Finish release + push to GHCR"
+	@echo "  1. make bump_release_version     # Update README.md version"
+	@echo "  2. make release_and_push_GHCR    # Finish release + push to GHCR"
 
 require_gitflow_next:
 	@if ! git flow version 2>/dev/null | grep -q 'git-flow-next'; then \
@@ -219,8 +229,8 @@ minor_release: require_gitflow_next
 	@echo ""
 	@echo "=== Release branch created ==="
 	@echo "Next steps:"
-	@echo "  1. Update CHANGELOG.md with release notes"
-	@echo "  2. git add -A && git commit      # Commit changelog"
+	@echo "  1. make bump_release_version     # Update README.md version"
+	@echo "  2. git add -A && git commit      # Commit version bump"
 	@echo "  3. make it_build                 # Build Docker image"
 	@echo "  4. make it_run                   # Smoke test"
 	@echo "  5. make ghcr_login               # Authenticate with GHCR"
@@ -232,8 +242,8 @@ patch_release: require_gitflow_next
 	@echo ""
 	@echo "=== Release branch created ==="
 	@echo "Next steps:"
-	@echo "  1. Update CHANGELOG.md with release notes"
-	@echo "  2. git add -A && git commit      # Commit changelog"
+	@echo "  1. make bump_release_version     # Update README.md version"
+	@echo "  2. git add -A && git commit      # Commit version bump"
 	@echo "  3. make it_build                 # Build Docker image"
 	@echo "  4. make it_run                   # Smoke test"
 	@echo "  5. make ghcr_login               # Authenticate with GHCR"
@@ -245,8 +255,8 @@ major_release: require_gitflow_next
 	@echo ""
 	@echo "=== Release branch created ==="
 	@echo "Next steps:"
-	@echo "  1. Update CHANGELOG.md with release notes"
-	@echo "  2. git add -A && git commit      # Commit changelog"
+	@echo "  1. make bump_release_version     # Update README.md version"
+	@echo "  2. git add -A && git commit      # Commit version bump"
 	@echo "  3. make it_build                 # Build Docker image"
 	@echo "  4. make it_run                   # Smoke test"
 	@echo "  5. make ghcr_login               # Authenticate with GHCR"
@@ -259,11 +269,12 @@ hotfix: require_gitflow_next
 	@echo "=== Hotfix branch created ==="
 	@echo "Next steps:"
 	@echo "  1. Fix the issue"
-	@echo "  2. git add -A && git commit      # Commit fix"
-	@echo "  3. make it_build                 # Build Docker image"
-	@echo "  4. make it_run                   # Smoke test"
-	@echo "  5. make ghcr_login               # Authenticate with GHCR"
-	@echo "  6. make hotfix_and_push_GHCR     # Finish hotfix + push to GHCR"
+	@echo "  2. make bump_release_version     # Update README.md version"
+	@echo "  3. git add -A && git commit      # Commit fix + version bump"
+	@echo "  4. make it_build                 # Build Docker image"
+	@echo "  5. make it_run                   # Smoke test"
+	@echo "  6. make ghcr_login               # Authenticate with GHCR"
+	@echo "  7. make hotfix_and_push_GHCR     # Finish hotfix + push to GHCR"
 
 release_finish: require_gitflow_next
 	@echo "=== Finishing release ==="
@@ -298,7 +309,7 @@ hotfix_and_push_GHCR: hotfix_finish
 	it_build it_build_no_cache it_run it_run_dev it_run_ghcr \
 	it_build_n_run it_build_n_run_no_cache it_build_n_test_fresh \
 	it_deploy ghcr_login ensure_builder it_build_multi_arch_push_GHCR \
-	show_version first_release require_gitflow_next \
+	show_version bump_release_version first_release require_gitflow_next \
 	minor_release patch_release major_release hotfix \
 	release_finish hotfix_finish \
 	release_and_push_GHCR hotfix_and_push_GHCR
