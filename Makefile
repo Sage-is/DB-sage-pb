@@ -282,7 +282,7 @@ release_finish: require_gitflow_next
 	git flow release finish && git push origin develop && git push origin master && git push --tags && git checkout develop
 	@echo ""
 	@echo "=== Release complete ==="
-	@echo "Tag: v$(IMAGE_TAG)"
+	@echo "Tag: $$(git tag --sort=-v:refname | head -n 1)"
 
 hotfix_finish: require_gitflow_next
 	@echo "=== Finishing hotfix ==="
@@ -293,17 +293,20 @@ release_and_push_GHCR: release_finish
 	@echo "=== Building and pushing to GHCR ==="
 	@make it_build_multi_arch_push_GHCR
 	@echo ""
-	@echo "=== Release $(IMAGE_TAG) published ==="
-	@echo "Verify: docker pull $(GHCR_IMAGE_NAME):$(IMAGE_TAG)"
-	@echo "Verify: docker pull $(GHCR_IMAGE_NAME):latest"
+	@VTAG=$$(git tag --sort=-v:refname | sed 's/^v//' | head -n 1); \
+	echo "=== Release $$VTAG published ==="; \
+	echo "Verify: docker pull $(GHCR_IMAGE_NAME):$$VTAG"; \
+	echo "Verify: docker pull $(GHCR_IMAGE_NAME):latest"
 
 hotfix_and_push_GHCR: hotfix_finish
 	@echo ""
 	@echo "=== Building and pushing to GHCR ==="
 	@make it_build_multi_arch_push_GHCR
 	@echo ""
-	@echo "=== Hotfix $(IMAGE_TAG) published ==="
-	@echo "Verify: docker pull $(GHCR_IMAGE_NAME):$(IMAGE_TAG)"
+	@VTAG=$$(git tag --sort=-v:refname | sed 's/^v//' | head -n 1); \
+	echo "=== Hotfix $$VTAG published ==="; \
+	echo "Verify: docker pull $(GHCR_IMAGE_NAME):$$VTAG"; \
+	echo "Verify: docker pull $(GHCR_IMAGE_NAME):latest"
 
 .PHONY: help it_stop it_clean it_gone \
 	it_build it_build_no_cache it_run it_run_dev it_run_ghcr \
