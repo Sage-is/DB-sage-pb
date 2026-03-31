@@ -3,7 +3,7 @@
 ## PocketBase Go Source Customization
 
 - [ ] Fork PocketBase and add as a **git subtree** (not submodule — simpler for onboarding devs)
-- [ ] Add `Cache-Control` / `ETag` headers for admin UI static assets (`/_/images/*`) to prevent aggressive browser caching of old logos/favicons
+- [ ] Fix aggressive caching of admin UI static assets (`/_/images/*`) — PocketBase's Go embedded file server sets `Last-Modified`/`ETag` headers that cause `304 Not Modified` even after Cloudflare cache purge + browser clear. Options: add cache-busting hashes to asset URLs, override `Cache-Control` headers in Go source, or add Cloudflare page rule to force revalidation on `/_/*`
 - [ ] Explore deeper admin UI modifications beyond logo (Svelte components in `ui/src/`)
 - [ ] Set up CI to auto-rebase subtree when upstream PocketBase releases new versions
 
