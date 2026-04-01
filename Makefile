@@ -158,6 +158,15 @@ it_build_n_test_fresh: it_build
 	@echo "Test volume cleaned up."
 
 # ---------------------------------------------------------------------------
+# Test harness (auto-creates superuser, submits test order, checks emails)
+# ---------------------------------------------------------------------------
+test:
+	./scripts/test.sh --keep
+
+test_fresh:
+	./scripts/test.sh --fresh --keep
+
+# ---------------------------------------------------------------------------
 # GHCR (GitHub Container Registry)
 # ---------------------------------------------------------------------------
 ghcr_login:
@@ -308,11 +317,18 @@ hotfix_and_push_GHCR: hotfix_finish
 	echo "Verify: docker pull $(GHCR_IMAGE_NAME):$$VTAG"; \
 	echo "Verify: docker pull $(GHCR_IMAGE_NAME):latest"
 
-.PHONY: help it_stop it_clean it_gone \
+.PHONY: release help it_stop it_clean it_gone \
 	it_build it_build_no_cache it_run it_run_dev it_run_ghcr \
 	it_build_n_run it_build_n_run_no_cache it_build_n_test_fresh \
 	it_deploy ghcr_login ensure_builder it_build_multi_arch_push_GHCR \
 	show_version bump_release_version first_release require_gitflow_next \
 	minor_release patch_release major_release hotfix \
 	release_finish hotfix_finish \
-	release_and_push_GHCR hotfix_and_push_GHCR
+	release_and_push_GHCR hotfix_and_push_GHCR \
+	test test_fresh
+
+# ---------------------------------------------------------------------------
+# Interactive release (full flow via ~/bin/git-release)
+# ---------------------------------------------------------------------------
+release:
+	@scripts/release.sh
