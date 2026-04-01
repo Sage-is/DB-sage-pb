@@ -126,12 +126,25 @@ This repo's hooks and migrations implement the **Sage Hardware Order Backend** f
 
 **Order flow:**
 1. User configures hardware at sage.is/hardware
-2. Frontend POSTs to `/api/collections/orders/records`
-3. PocketBase saves the order, emails team via Resend
-4. Team reviews in PocketBase admin, follows up with PO/contract
+2. Frontend POSTs to `/api/collections/orders/records` (falls back to mailto:join.us@sage.is if PB unreachable)
+3. PocketBase saves the order with a phone-style order number (L-XXX-XXX-XXXX)
+4. Resend sends two emails: team notification to join.us@sage.is + branded customer confirmation with config table
+5. Team reviews in PocketBase admin, follows up with PO/contract
 
 **Environment variables:**
 - `RESEND_API_KEY` — Resend API key for email notifications (optional, skips email if unset)
+
+## Roadmap
+
+**Phase 1 (live now):** PocketBase at pb.sage.is (Docker/CapRover) + contractual POs. Mailto fallback to join.us@sage.is. CTA says "Request a Quote".
+
+**Phase 1 remaining:**
+- Fix local PB migration syntax (presentable field + Field constructor issues in PB v0.36)
+- Deploy hooks to cluster (order number generator + Resend email notifications)
+- Test Resend integration end-to-end on production
+- Add /hardware/ to site navigation once checkout flow is confirmed working
+
+**Phase 2:** Django + Django Ninja replaces PocketBase (admin panel for order management). Stripe for Local/Hybrid hardware orders. Lemon Squeezy for Cloud Managed orders only (digital service, MoR handles VAT). Both settle to Mercury (US) or Portuguese bank. Paddle and Gumroad are not options — both prohibit physical goods.
 
 ## Branding & Customization
 
