@@ -1,6 +1,6 @@
 # Sage PocketBase
 
-## v0.2.1
+## v0.2.2
 
 Generic, reusable PocketBase Docker image published to GHCR. Each project layers its own hooks, migrations, and public assets on top via CapRover's `captain-definition`.
 
