@@ -1,8 +1,47 @@
 /// <reference path="../pb_data/types.d.ts" />
 
-// ─── Hook 1: Generate order number before save ──────────────────────────────
+// ─── Hook 1: Pre-create — spam guards + order number ────────────────────────
 
 onRecordCreateRequest(function(e) {
+  // Spam guard A — server-side honeypot. The website form never submits
+  // `notes`, so any non-empty value here is a bot that auto-fills the
+  // schema. Reject with a generic 400 so the bot can't probe for the
+  // specific reason.
+  var notesField = e.record.get("notes");
+  if (notesField && String(notesField).trim().length > 0) {
+    console.log("Honeypot tripped (notes field) for " + e.record.get("email"));
+    throw new BadRequestError("Invalid submission.");
+  }
+
+  // Spam guard B — per-email rate limit. Three requests per email per
+  // hour catches the abusive case (someone using the form to spam a
+  // target) without punishing a real user who retries after a missed
+  // confirmation.
+  var submittedEmail = e.record.get("email");
+  if (submittedEmail) {
+    try {
+      var oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+      var recent = e.app.findRecordsByFilter(
+        "orders",
+        "email = {:email} && created >= {:since}",
+        "-created",
+        10, 0,
+        { email: submittedEmail, since: oneHourAgo }
+      );
+      if (recent && recent.length >= 3) {
+        console.log("Rate limit hit for " + submittedEmail + " (" + recent.length + " in last hour)");
+        throw new BadRequestError("Too many recent submissions. Please try again later.");
+      }
+    } catch (err) {
+      // BadRequestError must bubble up — re-throw it. Any other error
+      // (e.g. query failure) is logged and ignored so a backend hiccup
+      // never breaks the form for real users.
+      if (err && err.name === "BadRequestError") throw err;
+      console.log("Rate-limit check failed (allowing): " + err);
+    }
+  }
+
+  // ─── Generate order number ───
   var areaCodes = [212, 718, 416, 514, 604, 351, 440, 415, 310, 305, 312, 617];
   var letters = "ABCDEFGHJKLMNPQRSTUVWXYZ";
   var digits = "0123456789";
@@ -18,7 +57,7 @@ onRecordCreateRequest(function(e) {
   e.next();
 }, "orders");
 
-// ─── Hook 2: Send emails after successful save ─────────────────────────────
+// ─── Hook 2: Post-create — send emails ──────────────────────────────────────
 
 onRecordAfterCreateSuccess(function(e) {
   var resendKey = $os.getenv("RESEND_API_KEY");
@@ -31,21 +70,42 @@ onRecordAfterCreateSuccess(function(e) {
   var orderNumber = record.get("order_number");
   var name = record.get("name");
   var email = record.get("email");
-  var org = record.get("organization") || "\u2014";
-  var config = record.get("config") || {};
+  var org = record.get("organization") || "—";
+  // record.get("config") returns a Go types.JsonRaw, not a JS object - dot
+  // access silently returns undefined. Round-trip through JSON to coerce it
+  // into a plain JS object the rest of this hook can read.
+  var config = {};
+  try {
+    var configRaw = record.get("config");
+    if (configRaw) config = JSON.parse(JSON.stringify(configRaw)) || {};
+  } catch (err) {
+    console.log("Failed to parse config JSON: " + err);
+  }
   var monthly = record.get("monthly_total");
   var annual = record.get("annual_total");
   var recordId = record.id;
 
-  var deploy = config.deploy || "local";
-  var platform = config.platform || "\u2014";
-  var compute = config.compute || "\u2014";
-  var memory = config.memory || "\u2014";
-  var storage = config.storage || "\u2014";
-  var software = config.software || "core";
-  var support = config.support || "community";
-  var access = config.access || {};
-  var accessList = Object.keys(access).filter(function(k) { return access[k]; }).join(", ") || "None";
+  // Friendly names from the client (config._display). Fall back to the
+  // raw ID if the client didn't send it (older form versions, mailto fallback).
+  var display = (config && config._display) || {};
+  var dx = function(key, fallback) {
+    if (display[key] !== undefined && display[key] !== null && display[key] !== "") return display[key];
+    if (config[key] !== undefined && config[key] !== null && config[key] !== "") return config[key];
+    return fallback;
+  };
+
+  var isCloud = (config.deploy || "") === "cloud";
+  var qty = Number(display.quantity || config.quantity || 1);
+  var qtySuffix = qty > 1 ? " × " + qty : "";
+
+  var deploy = dx("deploy", "—");
+  var platform = dx("platform", "—");
+  var compute = dx("compute", "—");
+  var memory = dx("memory", "—");
+  var storage = dx("storage", "—");
+  var software = dx("software", "—");
+  var support = dx("support", "—");
+  var accessList = display.accessList || "None";
 
   // Helper: table row
   function tr(label, value) {
@@ -56,23 +116,34 @@ onRecordAfterCreateSuccess(function(e) {
     return '<tr><td colspan="2" style="padding:12px 0 4px; border-top:1px solid #eee;"><strong>' + title + '</strong></td></tr>';
   }
 
+  // Build the configuration rows. In Cloud Managed, the customer didn't pick
+  // hardware — show "Managed by Sage" instead of empty hardware rows.
+  function configRows() {
+    var rows = tr("Deployment", deploy);
+    if (isCloud) {
+      rows += tr("Infrastructure", "Managed by Sage");
+    } else {
+      rows += tr("Platform", platform);
+      rows += tr("Compute", compute + qtySuffix);
+      rows += tr("Memory", memory + (qty > 1 ? " (per machine)" : ""));
+      rows += tr("Storage", storage + (qty > 1 ? " (per machine)" : ""));
+      rows += tr("Remote Access", accessList);
+    }
+    rows += tr("Software", software);
+    rows += tr("Support", support);
+    return rows;
+  }
+
   // --- Team notification email ---
   var teamHtml =
-    '<h2>New Quote Request \u2014 ' + orderNumber + '</h2>' +
+    '<h2>New Quote Request — ' + orderNumber + '</h2>' +
     '<table style="border-collapse:collapse; font-family:sans-serif; font-size:14px;">' +
     tr("Order", "<strong>" + orderNumber + "</strong>") +
     tr("Name", "<strong>" + name + "</strong>") +
     tr("Email", '<a href="mailto:' + email + '">' + email + '</a>') +
     tr("Organization", org) +
     sectionBreak("Configuration") +
-    tr("Deployment", deploy) +
-    tr("Platform", platform) +
-    tr("Compute", compute) +
-    tr("Memory", memory) +
-    tr("Storage", storage) +
-    tr("Software", software) +
-    tr("Support", support) +
-    tr("Remote Access", accessList) +
+    configRows() +
     sectionBreak("Pricing") +
     tr("Monthly", "<strong>$" + monthly + "/mo</strong>") +
     tr("Annual (15% off)", "$" + annual + "/yr") +
@@ -90,7 +161,7 @@ onRecordAfterCreateSuccess(function(e) {
         from: "Sage Orders <orders@sage.is>",
         to: ["join.us@sage.is"],
         reply_to: email,
-        subject: "New Hardware Quote \u2014 " + orderNumber + " \u2014 " + name,
+        subject: "New Hardware Quote — " + orderNumber + " — " + name,
         html: teamHtml,
       }),
     });
@@ -99,7 +170,7 @@ onRecordAfterCreateSuccess(function(e) {
     console.log("Failed to send team notification: " + err);
   }
 
-  // --- Customer confirmation email ---
+  // --- Customer confirmation email (CC'd to join.us@sage.is) ---
   var customerHtml =
     '<div style="max-width:600px; margin:0 auto; font-family:sans-serif; color:#333;">' +
     '<div style="background:#1a1a2e; padding:24px; text-align:center;">' +
@@ -107,26 +178,19 @@ onRecordAfterCreateSuccess(function(e) {
     '</div>' +
     '<div style="padding:32px 24px; background:#fff;">' +
     '<p style="margin:0 0 16px;">Hi ' + name + ',</p>' +
-    '<p style="margin:0 0 24px;">We\u2019ve received your hardware configuration request. Here\u2019s a summary of what you submitted:</p>' +
+    '<p style="margin:0 0 24px;">We’ve received your hardware configuration request. Here’s a summary of what you submitted:</p>' +
     '<div style="background:#f5f5f5; padding:16px; border-radius:8px; text-align:center; margin:0 0 24px;">' +
     '<div style="color:#666; font-size:13px;">Your reference number</div>' +
     '<div style="font-size:24px; font-weight:bold; letter-spacing:2px; margin-top:4px;">' + orderNumber + '</div>' +
     '</div>' +
     '<table style="border-collapse:collapse; font-size:14px; width:100%; margin:0 0 24px;">' +
-    tr("Deployment", deploy) +
-    tr("Platform", platform) +
-    tr("Compute", compute) +
-    tr("Memory", memory) +
-    tr("Storage", storage) +
-    tr("Software", software) +
-    tr("Support", support) +
-    tr("Remote Access", accessList) +
+    configRows() +
     '</table>' +
-    '<p style="margin:0 0 16px;">Our team will review your request and reach out within 1\u20132 business days to discuss next steps.</p>' +
+    '<p style="margin:0 0 16px;">Our team will review your request and reach out within 1–2 business days to discuss next steps.</p>' +
     '<p style="margin:0; color:#666;">If you have questions in the meantime, just reply to this email or reach us at <a href="mailto:join.us@sage.is">join.us@sage.is</a>.</p>' +
     '</div>' +
     '<div style="padding:16px 24px; color:#999; font-size:12px; text-align:center;">' +
-    'Sage \u2014 <a href="https://sage.is" style="color:#999;">sage.is</a>' +
+    'Sage — <a href="https://sage.is" style="color:#999;">sage.is</a>' +
     '</div>' +
     '</div>';
 
@@ -138,11 +202,12 @@ onRecordAfterCreateSuccess(function(e) {
       body: JSON.stringify({
         from: "Sage <orders@sage.is>",
         to: [email],
+        cc: ["join.us@sage.is"],
         subject: "Your quote request " + orderNumber,
         html: customerHtml,
       }),
     });
-    console.log("Customer confirmation sent for " + orderNumber);
+    console.log("Customer confirmation sent for " + orderNumber + " (CC join.us@sage.is)");
   } catch (err) {
     console.log("Failed to send customer confirmation: " + err);
   }
