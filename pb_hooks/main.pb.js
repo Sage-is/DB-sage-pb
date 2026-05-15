@@ -71,15 +71,22 @@ onRecordAfterCreateSuccess(function(e) {
   var name = record.get("name");
   var email = record.get("email");
   var org = record.get("organization") || "—";
-  // record.get("config") returns a Go types.JsonRaw, not a JS object - dot
-  // access silently returns undefined. Round-trip through JSON to coerce it
-  // into a plain JS object the rest of this hook can read.
+  // record.get("config") returns a Go types.JsonRaw, which the PocketBase JSVM
+  // exposes as a raw JSON *string* (UTF-8 bytes). Calling JSON.stringify() on
+  // a string double-encodes it, so JSON.parse() hands back a string, not an
+  // object — dot-access silently returns undefined. Parse the string directly.
+  // If a future PB version auto-decodes JSON fields to a JS object, the
+  // roundtrip branch handles that case too.
   var config = {};
   try {
     var configRaw = record.get("config");
-    if (configRaw) config = JSON.parse(JSON.stringify(configRaw)) || {};
+    if (configRaw) {
+      config = (typeof configRaw === "string"
+        ? JSON.parse(configRaw)
+        : JSON.parse(JSON.stringify(configRaw))) || {};
+    }
   } catch (err) {
-    console.log("Failed to parse config JSON: " + err);
+    console.log("Config parse error (" + typeof record.get("config") + "): " + err);
   }
   var monthly = record.get("monthly_total");
   var annual = record.get("annual_total");
