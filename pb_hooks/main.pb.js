@@ -106,6 +106,7 @@ onRecordAfterCreateSuccess(function(e) {
   var software = dx("software", "—");
   var support = dx("support", "—");
   var accessList = display.accessList || "None";
+  var configUrl = display.configUrl || null;
 
   // Helper: table row
   function tr(label, value) {
@@ -147,6 +148,7 @@ onRecordAfterCreateSuccess(function(e) {
     sectionBreak("Pricing") +
     tr("Monthly", "<strong>$" + monthly + "/mo</strong>") +
     tr("Annual (15% off)", "$" + annual + "/yr") +
+    (configUrl ? tr("Config link", '<a href="' + configUrl + '">View on sage.is ↗</a>') : '') +
     '</table>' +
     '<p style="margin-top:20px; color:#666; font-size:13px;">' +
     '<a href="https://pb.sage.is/_/#/collections/orders/records/' + recordId + '">View in PocketBase admin</a>' +
@@ -182,10 +184,12 @@ onRecordAfterCreateSuccess(function(e) {
     '<div style="background:#f5f5f5; padding:16px; border-radius:8px; text-align:center; margin:0 0 24px;">' +
     '<div style="color:#666; font-size:13px;">Your reference number</div>' +
     '<div style="font-size:24px; font-weight:bold; letter-spacing:2px; margin-top:4px;">' + orderNumber + '</div>' +
+    (configUrl ? '<a href="' + configUrl + '" style="display:inline-block; margin-top:10px; font-size:13px; color:#1a1a2e; font-weight:600; text-decoration:none;">↗ View your configuration on sage.is</a>' : '') +
     '</div>' +
     '<table style="border-collapse:collapse; font-size:14px; width:100%; margin:0 0 24px;">' +
     configRows() +
     '</table>' +
+    (configUrl ? '<p style="margin:0 0 24px;"><a href="' + configUrl + '" style="color:#1a1a2e; font-weight:600; font-size:14px;">↗ View or share this configuration on sage.is</a></p>' : '') +
     '<p style="margin:0 0 16px;">Our team will review your request and reach out within 1–2 business days to discuss next steps.</p>' +
     '<p style="margin:0; color:#666;">If you have questions in the meantime, just reply to this email or reach us at <a href="mailto:join.us@sage.is">join.us@sage.is</a>.</p>' +
     '</div>' +
