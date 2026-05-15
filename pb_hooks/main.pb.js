@@ -60,33 +60,30 @@ onRecordCreateRequest(function(e) {
 // ─── Hook 2: Post-create — send emails ──────────────────────────────────────
 
 onRecordAfterCreateSuccess(function(e) {
+  var record = e.record;
+
   var resendKey = $os.getenv("RESEND_API_KEY");
   if (!resendKey) {
     console.log("RESEND_API_KEY not set — skipping email notifications");
     return;
   }
 
-  var record = e.record;
   var orderNumber = record.get("order_number");
   var name = record.get("name");
   var email = record.get("email");
   var org = record.get("organization") || "—";
-  // record.get("config") returns a Go types.JsonRaw, which the PocketBase JSVM
-  // exposes as a raw JSON *string* (UTF-8 bytes). Calling JSON.stringify() on
-  // a string double-encodes it, so JSON.parse() hands back a string, not an
-  // object — dot-access silently returns undefined. Parse the string directly.
-  // If a future PB version auto-decodes JSON fields to a JS object, the
-  // roundtrip branch handles that case too.
+  // PocketBase JSVM (Goja) wraps Go []byte (types.JsonRaw) as a JS Array of
+  // byte values. JSON.stringify() on that gives "[123,34,...]" — useless.
+  // String() coerces the byte slice back to UTF-8, giving the raw JSON text,
+  // which JSON.parse() then deserialises into a proper JS object.
   var config = {};
   try {
     var configRaw = record.get("config");
     if (configRaw) {
-      config = (typeof configRaw === "string"
-        ? JSON.parse(configRaw)
-        : JSON.parse(JSON.stringify(configRaw))) || {};
+      config = JSON.parse(String(configRaw)) || {};
     }
   } catch (err) {
-    console.log("Config parse error (" + typeof record.get("config") + "): " + err);
+    console.log("Config parse error: " + err);
   }
   var monthly = record.get("monthly_total");
   var annual = record.get("annual_total");
