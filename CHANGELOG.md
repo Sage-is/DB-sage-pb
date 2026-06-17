@@ -5,6 +5,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.3.2] — 2026-06-17
+
+### Fixed
+
+- **CORS broken for credentialed gate requests** — PocketBase v0.36's `--origins` CLI flag echoes `*` regardless of the request origin when deployed via CapRover, and never sets `Access-Control-Allow-Credentials`. The gate component calls `fetch(..., { credentials: 'include' })`, which browsers reject when ACAO is a wildcard. Fix: apply CORS headers per-route in the `gate_unlock.pb.js` hook instead. `applyGateCors()` checks the `Origin` request header against an explicit allowlist, then sets `Access-Control-Allow-Origin` to the *specific* origin + `Access-Control-Allow-Credentials: true` + `Vary: Origin`. A matching `OPTIONS /api/sage/gate-unlock` preflight handler returns a `204` with the same headers. All other PocketBase endpoints are untouched — the CORS override is surgical.
+
+---
+
 ## [0.3.1] — 2026-06-17
 
 ### Fixed
