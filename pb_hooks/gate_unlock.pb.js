@@ -39,16 +39,47 @@ var GATE_ALLOWED_ORIGINS = [
   "http://127.0.0.1:8080",
 ];
 
+// Read the Origin request header defensively. Goja exposes Go's
+// http.Header in subtly different ways across PB versions:
+//   - .get("Origin") on the Header interface (declared in types.d.ts)
+//   - map-style indexing [k] (Header extends _TygojaDict)
+//   - direct field access (.Origin, capitalized)
+// We try them in order so a single binding quirk doesn't make the entire
+// hook throw an unhandled exception (which PB turns into a generic 400).
+function readOrigin(e) {
+  try {
+    if (!e || !e.request || !e.request.header) return "";
+    var h = e.request.header;
+    // Pattern A: Header.Get method
+    if (typeof h.get === "function") {
+      var v = h.get("Origin");
+      if (v) return String(v);
+    }
+    // Pattern B: map-style indexing returns array of values
+    var arr = h["Origin"];
+    if (arr && arr.length > 0) return String(arr[0]);
+    return "";
+  } catch (originReadErr) {
+    console.log("CORS: failed to read Origin header: " + originReadErr);
+    return "";
+  }
+}
+
 function applyGateCors(e) {
-  var origin = (e.request && e.request.header)
-    ? String(e.request.header.get("Origin") || "")
-    : "";
-  if (!origin) return;
-  if (GATE_ALLOWED_ORIGINS.indexOf(origin) === -1) return;
-  // .set replaces — overwrites PocketBase's default "*" ACAO.
-  e.response.header().set("Access-Control-Allow-Origin", origin);
-  e.response.header().set("Access-Control-Allow-Credentials", "true");
-  e.response.header().set("Vary", "Origin");
+  try {
+    var origin = readOrigin(e);
+    if (!origin) return;
+    if (GATE_ALLOWED_ORIGINS.indexOf(origin) === -1) return;
+    // .set replaces — overwrites PocketBase's default "*" ACAO.
+    var h = e.response.header();
+    h.set("Access-Control-Allow-Origin", origin);
+    h.set("Access-Control-Allow-Credentials", "true");
+    h.set("Vary", "Origin");
+  } catch (corsErr) {
+    // Never let CORS-setting crash the hook — at worst the browser
+    // rejects the response, but the cookies still get minted.
+    console.log("CORS: applyGateCors failed: " + corsErr);
+  }
 }
 
 // ─── OPTIONS /api/sage/gate-unlock — CORS preflight ──────────────────────────
