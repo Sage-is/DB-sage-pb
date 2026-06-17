@@ -1,8 +1,8 @@
 # Sage PocketBase
 
-## v0.3.0
+## v0.3.1
 
-**What's new:** membership gate backend (`POST /api/sage/gate-unlock` + `subscribers` collection) and dual-host CORS for `sage.is` + `sage.education`. See [CHANGELOG.md](CHANGELOG.md) for full details.
+**What's new:** membership gate backend (`POST /api/sage/gate-unlock` + `subscribers` collection) and dual-host CORS for `sage.is` + `sage.education`. **v0.3.1** patches a PocketBase v0.36 compatibility break where the gate-unlock endpoint silently returned `400` instead of setting the auth cookie. See [CHANGELOG.md](CHANGELOG.md) for full details.
 
 Generic, reusable PocketBase Docker image published to GHCR. Each project layers its own hooks, migrations, and public assets on top via CapRover's `captain-definition`.
 

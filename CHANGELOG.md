@@ -5,6 +5,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.3.1] — 2026-06-17
+
+### Fixed
+
+- **Membership gate broken on PB v0.36** — `$tokens.newAuthRecordAuthToken(record)` no longer exists in PocketBase v0.36; the `$tokens` JSVM namespace was removed. `POST /api/sage/gate-unlock` now calls `record.newAuthToken()` (a method on the Record itself, confirmed via `pb_data/types.d.ts`) to mint the membership JWT. Before this fix, valid email submissions hit an unhandled exception and PocketBase returned a generic `400 "Something went wrong"` instead of setting the cookie and unlocking the article.
+
+---
+
 ## [0.3.0] — 2026-06-17
 
 ### Added
