@@ -1,6 +1,6 @@
 # Sage PocketBase
 
-## v0.3.2
+## v0.3.3
 
 **What's new:** membership gate backend (`POST /api/sage/gate-unlock` + `subscribers` collection) and dual-host CORS for `sage.is` + `sage.education`. **v0.3.1** patches a PocketBase v0.36 break where gate-unlock returned `400` instead of setting the auth cookie. **v0.3.2** fixes credentialed CORS: PB v0.36's `--origins` flag echoes `*` (no `Allow-Credentials`) in CapRover, breaking the gate's `credentials: 'include'` fetch — CORS headers are now applied per-origin in the hook itself. See [CHANGELOG.md](CHANGELOG.md) for full details.
 
