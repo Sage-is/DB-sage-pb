@@ -5,6 +5,6 @@
     "COPY pb_hooks/ /app/pb_hooks/",
     "COPY pb_migrations/ /app/pb_migrations/",
     "COPY pb_public/ /app/pb_public/",
-    "CMD [\"pocketbase\", \"serve\", \"--http=0.0.0.0:8090\", \"--dir=/app/pb_data\", \"--hooksDir=/app/pb_hooks\", \"--migrationsDir=/app/pb_migrations\", \"--publicDir=/app/pb_public\"]"
+    "CMD [\"pocketbase\", \"serve\", \"--http=0.0.0.0:8090\", \"--dir=/app/pb_data\", \"--hooksDir=/app/pb_hooks\", \"--migrationsDir=/app/pb_migrations\", \"--publicDir=/app/pb_public\", \"--origins=https://sage.is,https://www.sage.is,https://sage.education,https://www.sage.education\"]"
   ]
 }
