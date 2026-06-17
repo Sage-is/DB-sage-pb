@@ -61,7 +61,11 @@ routerAdd("POST", "/api/sage/gate-unlock", function (e) {
   // HS256 JWT signed with the collection's tokenKey. Duration is set in the
   // 003_subscribers migration (authToken.duration = 365 days). Rotating
   // tokenKey on a record invalidates all of that member's tokens.
-  var token = $tokens.newAuthRecordAuthToken(record);
+  //
+  // PB v0.36 mints auth tokens via record.newAuthToken() — a method on the
+  // Record itself. The `$tokens` JSVM namespace doesn't exist in v0.36
+  // (older PB versions had `$tokens.newAuthRecordAuthToken(record)`).
+  var token = record.newAuthToken();
 
   // ─── Determine cookie scope from request hostname ───
   // PocketBase is dual-hosted at pb.sage.is (for sage.is consumers) and
