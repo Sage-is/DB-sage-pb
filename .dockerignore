@@ -1,23 +1,18 @@
-# Local PocketBase binary (downloaded in Docker build)
-pocketbase
+# Hidden-artifact allowlist: deny dotfiles and dotfolders everywhere in the
+# build context unless they are intentionally needed inside the image.
+.*
 
-# Runtime data
+# PocketBase binary (downloaded fresh during Docker build) and runtime data
+pocketbase
 pb_data/
 
-# Project-specific files (not needed in generic image)
+# Project-specific files not needed in generic image
 pb_hooks/
 pb_migrations/
 pb_public/
 captain-definition
 Makefile
 docker-compose.yml
-
-# Git
-.git/
-.gitignore
-
-# OS
-.DS_Store
 
 # Docs
 README.md

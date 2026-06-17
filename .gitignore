@@ -1,11 +1,13 @@
-# PocketBase binary (download per platform)
+# Hidden-artifact allowlist: deny dotfiles and dotfolders everywhere in the
+# repo unless they are intentionally shared and explicitly included below.
+.*
+!/.gitignore
+!/.gitattributes
+!/.dockerignore
+!/.editorconfig
+!.*.example
+!.gitkeep
+
+# PocketBase binary (downloaded per platform) and runtime data
 pocketbase
-
-# PocketBase data (generated at runtime)
 pb_data/
-
-# Environment
-.env
-
-# OS files
-.DS_Store
