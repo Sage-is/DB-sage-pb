@@ -73,4 +73,11 @@ VOLUME /app/pb_data
 
 EXPOSE 8090
 
-CMD ["pocketbase", "serve", "--http=0.0.0.0:8090", "--dir=/app/pb_data"]
+# --origins explicitly enumerates the cross-site origins PocketBase will accept
+# requests from. In PB v0.36 this is a `serve`-command flag, not a settings
+# field — so the Dockerfile CMD is the version-controlled home. Add an entry
+# here when standing up a new sage-family consumer site.
+CMD ["pocketbase", "serve", \
+     "--http=0.0.0.0:8090", \
+     "--dir=/app/pb_data", \
+     "--origins=https://sage.is,https://www.sage.is,https://sage.education,https://www.sage.education"]

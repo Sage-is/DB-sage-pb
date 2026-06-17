@@ -1,5 +1,13 @@
 # TODO
 
+## Membership Gate (Phase 1)
+
+- [ ] **Time-Delayed Membership Gate — PocketBase work**: dual-host the PB instance and version-control CORS. Plan at [`~/.claude/plans/are-you-able-to-twinkly-pike.md`](~/.claude/plans/are-you-able-to-twinkly-pike.md) (original: [`~/.claude/plans/a-growing-number-of-jiggly-cherny.md`](~/.claude/plans/a-growing-number-of-jiggly-cherny.md)). Backend hook + migration already shipped (`pb_hooks/gate_unlock.pb.js`, `pb_migrations/003_subscribers.js`).
+  - [x] Version-control CORS origins via the Dockerfile `--origins` flag — PB v0.36 only exposes origins on the `serve` command, not via `app.settings()`. Updated `Dockerfile` CMD line; `pb.sage.is` rebuild + redeploy applies it. New consumer sites get a new entry in that CMD line.
+  - [ ] **[MANUALLY]** Add DNS A record `pb.sage.education` → PocketBase VPS IP.
+  - [ ] **[MANUALLY]** In CapRover dashboard, add `pb.sage.education` as an additional domain on the PocketBase app. Confirm Let's Encrypt provisions a cert.
+  - [ ] **[WE]** Smoke-test the gate-unlock hook against both hosts: cookies set on the correct registrable domain; one `subscribers` record per email regardless of which host was used.
+
 ## Hardware Orders (Phase 1)
 
 - [ ] Fix local PB migration syntax (presentable field + Field constructor issues in PB v0.36)
