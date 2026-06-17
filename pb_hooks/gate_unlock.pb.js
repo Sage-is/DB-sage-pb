@@ -16,7 +16,59 @@
 // (/api/sage/gate-unlock/oauth/<provider>/callback) sharing the same upsert
 // + cookie-mint helper.
 
+// ─── CORS allowlist + helper ─────────────────────────────────────────────────
+// The gate component uses fetch(..., {credentials: 'include'}) so browsers
+// REQUIRE both Access-Control-Allow-Origin set to the specific origin (NOT
+// the wildcard "*") AND Access-Control-Allow-Credentials: true on the
+// response. PocketBase v0.36's `--origins` CLI flag misbehaves in our
+// CapRover deploy — pb.sage.is echoes "*" regardless, neither host sets
+// Allow-Credentials. So we apply CORS headers per-route in JS instead;
+// surgical, leaves PB's other endpoints untouched.
+//
+// To allow a new consumer-site origin: append it here AND make sure the
+// PocketBase hook's cookie-domain switch in the POST handler maps the
+// request host to the correct registrable domain.
+var GATE_ALLOWED_ORIGINS = [
+  "https://sage.is",
+  "https://www.sage.is",
+  "https://sage.education",
+  "https://www.sage.education",
+  // Local development origins — Eleventy dev server defaults.
+  "http://localhost:8080",
+  "http://localhost:8081",
+  "http://127.0.0.1:8080",
+];
+
+function applyGateCors(e) {
+  var origin = (e.request && e.request.header)
+    ? String(e.request.header.get("Origin") || "")
+    : "";
+  if (!origin) return;
+  if (GATE_ALLOWED_ORIGINS.indexOf(origin) === -1) return;
+  // .set replaces — overwrites PocketBase's default "*" ACAO.
+  e.response.header().set("Access-Control-Allow-Origin", origin);
+  e.response.header().set("Access-Control-Allow-Credentials", "true");
+  e.response.header().set("Vary", "Origin");
+}
+
+// ─── OPTIONS /api/sage/gate-unlock — CORS preflight ──────────────────────────
+//
+// Overrides PocketBase's default preflight which returns ACAO:"*" + no
+// Allow-Credentials, breaking the gate's credentialed fetch from the
+// browser. We respond with the specific origin + credentials:true.
+routerAdd("OPTIONS", "/api/sage/gate-unlock", function (e) {
+  applyGateCors(e);
+  e.response.header().set("Access-Control-Allow-Methods", "POST, OPTIONS");
+  e.response.header().set("Access-Control-Allow-Headers", "Content-Type");
+  e.response.header().set("Access-Control-Max-Age", "86400");
+  return e.noContent(204);
+});
+
 routerAdd("POST", "/api/sage/gate-unlock", function (e) {
+  // Apply CORS at the very top so headers stick on every code path —
+  // including the BadRequestError throws below.
+  applyGateCors(e);
+
   // ─── Bind + validate the request body ───
   var data = new DynamicModel({ email: "", source: "" });
   e.bindBody(data);
