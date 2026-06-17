@@ -1,6 +1,8 @@
 # Sage PocketBase
 
-## v0.2.5
+## v0.3.0
+
+**What's new:** membership gate backend (`POST /api/sage/gate-unlock` + `subscribers` collection) and dual-host CORS for `sage.is` + `sage.education`. See [CHANGELOG.md](CHANGELOG.md) for full details.
 
 Generic, reusable PocketBase Docker image published to GHCR. Each project layers its own hooks, migrations, and public assets on top via CapRover's `captain-definition`.
 
