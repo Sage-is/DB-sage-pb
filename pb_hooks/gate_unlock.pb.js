@@ -4,122 +4,57 @@
 //
 // Anonymous endpoint called directly from the browser by the signup-gate
 // component on sage.is / sage.education. Creates (or refreshes) a subscribers
-// record, mints a PocketBase auth token, and sets it as an HttpOnly cookie on
-// Domain=.sage.is so every subdomain shares the unlock state.
+// record, mints a PocketBase auth token, and returns it in the JSON body.
 //
-// The read path on consumer sites is cookie-only — they don't call back to
-// PocketBase on every page load. So a PocketBase outage at read time never
-// blocks existing members. An outage at signup-write time returns 503
-// "try again in a moment" because the membership record is the source of truth.
+// Architecture: token-in-body, not Set-Cookie. The consumer site stores the
+// token in localStorage and the gate's read-path checks localStorage. This
+// is intentionally simpler than the cookie + cross-origin CORS dance — it
+// works under any vendor (Cloudflare, Pages, self-host) without needing
+// per-origin ACAO + Allow-Credentials. PB's default `*` CORS is fine because
+// we don't use credentialed fetch.
 //
-// Phase 2 will add a second route here for OAuth callback handling
-// (/api/sage/gate-unlock/oauth/<provider>/callback) sharing the same upsert
-// + cookie-mint helper.
+// Trade-off: a localStorage token is XSS-readable. We accept that here
+// because the gate guards CONTENT, not payment or auth state. An attacker
+// who already has XSS on the consumer site can read anything the page can —
+// the gate token is not a meaningful escalation. If payments or sensitive
+// account actions get added in Phase 3, revisit this with HttpOnly cookies
+// behind a same-origin proxy.
 
-// ─── CORS allowlist + helper ─────────────────────────────────────────────────
-// The gate component uses fetch(..., {credentials: 'include'}) so browsers
-// REQUIRE both Access-Control-Allow-Origin set to the specific origin (NOT
-// the wildcard "*") AND Access-Control-Allow-Credentials: true on the
-// response. PocketBase v0.36's `--origins` CLI flag misbehaves in our
-// CapRover deploy — pb.sage.is echoes "*" regardless, neither host sets
-// Allow-Credentials. So we apply CORS headers per-route in JS instead;
-// surgical, leaves PB's other endpoints untouched.
-//
-// To allow a new consumer-site origin: append it here AND make sure the
-// PocketBase hook's cookie-domain switch in the POST handler maps the
-// request host to the correct registrable domain.
-var GATE_ALLOWED_ORIGINS = [
-  "https://sage.is",
-  "https://www.sage.is",
-  "https://sage.education",
-  "https://www.sage.education",
-  // Local development origins — Eleventy dev server defaults.
-  "http://localhost:8080",
-  "http://localhost:8081",
-  "http://127.0.0.1:8080",
-];
-
-// Read the Origin request header defensively. Goja exposes Go's
-// http.Header in subtly different ways across PB versions:
-//   - .get("Origin") on the Header interface (declared in types.d.ts)
-//   - map-style indexing [k] (Header extends _TygojaDict)
-//   - direct field access (.Origin, capitalized)
-// We try them in order so a single binding quirk doesn't make the entire
-// hook throw an unhandled exception (which PB turns into a generic 400).
-function readOrigin(e) {
-  try {
-    if (!e || !e.request || !e.request.header) return "";
-    var h = e.request.header;
-    // Pattern A: Header.Get method
-    if (typeof h.get === "function") {
-      var v = h.get("Origin");
-      if (v) return String(v);
-    }
-    // Pattern B: map-style indexing returns array of values
-    var arr = h["Origin"];
-    if (arr && arr.length > 0) return String(arr[0]);
-    return "";
-  } catch (originReadErr) {
-    console.log("CORS: failed to read Origin header: " + originReadErr);
-    return "";
-  }
-}
-
-function applyGateCors(e) {
-  try {
-    var origin = readOrigin(e);
-    if (!origin) return;
-    if (GATE_ALLOWED_ORIGINS.indexOf(origin) === -1) return;
-    // .set replaces — overwrites PocketBase's default "*" ACAO.
-    var h = e.response.header();
-    h.set("Access-Control-Allow-Origin", origin);
-    h.set("Access-Control-Allow-Credentials", "true");
-    h.set("Vary", "Origin");
-  } catch (corsErr) {
-    // Never let CORS-setting crash the hook — at worst the browser
-    // rejects the response, but the cookies still get minted.
-    console.log("CORS: applyGateCors failed: " + corsErr);
-  }
-}
-
-// ─── OPTIONS /api/sage/gate-unlock — CORS preflight ──────────────────────────
-//
-// Overrides PocketBase's default preflight which returns ACAO:"*" + no
-// Allow-Credentials, breaking the gate's credentialed fetch from the
-// browser. We respond with the specific origin + credentials:true.
-routerAdd("OPTIONS", "/api/sage/gate-unlock", function (e) {
-  applyGateCors(e);
-  e.response.header().set("Access-Control-Allow-Methods", "POST, OPTIONS");
-  e.response.header().set("Access-Control-Allow-Headers", "Content-Type");
-  e.response.header().set("Access-Control-Max-Age", "86400");
-  return e.noContent(204);
-});
+var GATE_HOOK_VERSION = "0.4.0-token-in-body";
+console.log("[gate-unlock] hook loaded v" + GATE_HOOK_VERSION);
 
 routerAdd("POST", "/api/sage/gate-unlock", function (e) {
-  // Apply CORS at the very top so headers stick on every code path —
-  // including the BadRequestError throws below.
-  applyGateCors(e);
-
   // ─── Bind + validate the request body ───
   var data = new DynamicModel({ email: "", source: "" });
-  e.bindBody(data);
+  try {
+    e.bindBody(data);
+  } catch (bindErr) {
+    return e.badRequestError("Invalid request body.", null);
+  }
 
   var email = String(data.email || "").trim().toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    throw new BadRequestError("Please enter a valid email address.");
+    return e.badRequestError("Please enter a valid email address.", null);
   }
 
   var source = String(data.source || "").trim().substring(0, 100) || "sage.is";
 
+  // Host tracked for analytics + abuse detection, but no longer used to
+  // pick a cookie domain (we don't set cookies). Unknown hosts still get
+  // rejected as a defensive measure.
+  var host = String(e.request.host || "").toLowerCase();
+  if (host !== "pb.sage.is" && host !== "pb.sage.education") {
+    console.log("[gate-unlock] refusing unknown host: " + host);
+    return e.badRequestError("Invalid host.", null);
+  }
+
   // ─── Upsert subscribers record ───
   var record;
   try {
-    // Existing member — refresh unlocked_at and continue
     record = e.app.findFirstRecordByData("subscribers", "email", email);
     record.set("unlocked_at", new Date().toISOString());
     e.app.save(record);
   } catch (notFoundErr) {
-    // New member — create
     try {
       var coll = e.app.findCollectionByNameOrId("subscribers");
       record = new Record(coll);
@@ -128,15 +63,15 @@ routerAdd("POST", "/api/sage/gate-unlock", function (e) {
       record.set("tags", ["gate-unlock"]);
       record.set("unlocked_at", new Date().toISOString());
       record.set("verified", true);
-      // Random password — never used (password auth is disabled on this collection)
-      // but PocketBase's auth schema requires a value. Phase 3 enables passwords
-      // and we'll prompt for one via a separate self-service flow.
+      // Random password placeholder — auth happens via the JWT we mint
+      // below, not via password. Phase 3 may enable passwords via a
+      // separate self-service flow.
       record.setPassword($security.randomString(40));
       e.app.save(record);
-      console.log("New member: " + email + " (source=" + source + ")");
+      console.log("[gate-unlock] new member: " + email + " (source=" + source + ", host=" + host + ")");
     } catch (createErr) {
-      console.log("Subscriber create failed for " + email + ": " + createErr);
-      throw new ApiError(503, "Try again in a moment.", null);
+      console.log("[gate-unlock] subscriber create failed for " + email + ": " + createErr);
+      return e.error(503, "Try again in a moment.", null);
     }
   }
 
@@ -144,50 +79,11 @@ routerAdd("POST", "/api/sage/gate-unlock", function (e) {
   // HS256 JWT signed with the collection's tokenKey. Duration is set in the
   // 003_subscribers migration (authToken.duration = 365 days). Rotating
   // tokenKey on a record invalidates all of that member's tokens.
-  //
-  // PB v0.36 mints auth tokens via record.newAuthToken() — a method on the
-  // Record itself. The `$tokens` JSVM namespace doesn't exist in v0.36
-  // (older PB versions had `$tokens.newAuthRecordAuthToken(record)`).
   var token = record.newAuthToken();
 
-  // ─── Determine cookie scope from request hostname ───
-  // PocketBase is dual-hosted at pb.sage.is (for sage.is consumers) and
-  // pb.sage.education (for sage.education consumers). Browsers only accept
-  // Set-Cookie for the responding host's own registrable domain — pb.sage.is
-  // CAN'T set a cookie on .sage.education and vice versa. So the cookie's
-  // Domain attribute is picked from whichever hostname the client used.
-  //
-  // Unknown hosts get refused — defensive against misconfiguration or
-  // someone pointing a third domain at the same IP.
-  var host = String(e.request.host || "").toLowerCase();
-  var cookieDomain;
-  if (host === "pb.sage.is") {
-    cookieDomain = ".sage.is";
-  } else if (host === "pb.sage.education") {
-    cookieDomain = ".sage.education";
-  } else {
-    console.log("Refusing gate-unlock from unknown host: " + host);
-    throw new BadRequestError("Invalid host.");
-  }
-
-  // ─── Set membership cookies ───
-  // Two cookies for defence-in-depth on the JWT itself:
-  //   - sage_gate (HttpOnly): the JWT, not readable by JavaScript.
-  //     XSS can't exfiltrate it; the attacker is confined to ambient session.
-  //   - sage_gate_present: JS-readable sentinel so the gate component can
-  //     locally decide "this user is unlocked, don't render the gate"
-  //     without needing to call PocketBase on every page load.
-  var maxAge = 31536000; // 365 days
-  var cookieAttrs = "Domain=" + cookieDomain + "; Path=/; Max-Age=" + maxAge + "; Secure; SameSite=Lax";
-
-  e.response.header().add(
-    "Set-Cookie",
-    "sage_gate=" + token + "; HttpOnly; " + cookieAttrs
-  );
-  e.response.header().add(
-    "Set-Cookie",
-    "sage_gate_present=1; " + cookieAttrs
-  );
-
-  return e.json(200, { ok: true });
+  return e.json(200, {
+    ok: true,
+    token: token,
+    email: email,
+  });
 });
