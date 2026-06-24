@@ -20,21 +20,30 @@
 // account actions get added in Phase 3, revisit this with HttpOnly cookies
 // behind a same-origin proxy.
 
-var GATE_HOOK_VERSION = "0.4.0-token-in-body";
-console.log("[gate-unlock] hook loaded v" + GATE_HOOK_VERSION);
+var GATE_HOOK_VERSION = "0.4.1-token-in-body";
+var GATE_LOG_FIRED = false;
 
 routerAdd("POST", "/api/sage/gate-unlock", function (e) {
+  // One-shot deploy canary inside the handler. console.log at module-top
+  // throws in PocketBase v0.36's JSVM at hooks-load time (silently — PB
+  // skips the whole module, which is how the route 404'd in v0.3.4).
+  // Inside the handler it's safe; the boolean keeps it to once per process.
+  if (!GATE_LOG_FIRED) {
+    GATE_LOG_FIRED = true;
+    console.log("[gate-unlock] hook v" + GATE_HOOK_VERSION + " — first request received");
+  }
+
   // ─── Bind + validate the request body ───
   var data = new DynamicModel({ email: "", source: "" });
   try {
     e.bindBody(data);
   } catch (bindErr) {
-    return e.badRequestError("Invalid request body.", null);
+    throw new BadRequestError("Invalid request body.");
   }
 
   var email = String(data.email || "").trim().toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    return e.badRequestError("Please enter a valid email address.", null);
+    throw new BadRequestError("Please enter a valid email address.");
   }
 
   var source = String(data.source || "").trim().substring(0, 100) || "sage.is";
@@ -45,7 +54,7 @@ routerAdd("POST", "/api/sage/gate-unlock", function (e) {
   var host = String(e.request.host || "").toLowerCase();
   if (host !== "pb.sage.is" && host !== "pb.sage.education") {
     console.log("[gate-unlock] refusing unknown host: " + host);
-    return e.badRequestError("Invalid host.", null);
+    throw new BadRequestError("Invalid host.");
   }
 
   // ─── Upsert subscribers record ───
@@ -71,7 +80,7 @@ routerAdd("POST", "/api/sage/gate-unlock", function (e) {
       console.log("[gate-unlock] new member: " + email + " (source=" + source + ", host=" + host + ")");
     } catch (createErr) {
       console.log("[gate-unlock] subscriber create failed for " + email + ": " + createErr);
-      return e.error(503, "Try again in a moment.", null);
+      throw new ApiError(503, "Try again in a moment.", null);
     }
   }
 
