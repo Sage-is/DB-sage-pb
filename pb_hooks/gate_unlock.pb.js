@@ -20,44 +20,53 @@
 // account actions get added in Phase 3, revisit this with HttpOnly cookies
 // behind a same-origin proxy.
 
-var GATE_HOOK_VERSION = "0.4.1-token-in-body";
+var GATE_HOOK_VERSION = "0.4.2-no-throw";
 var GATE_LOG_FIRED = false;
 
+// Why no `throw` anywhere in this handler:
+// PocketBase v0.36's routerAdd recovery middleware catches any thrown
+// exception (including `new BadRequestError("…")` and `new ApiError(…)`)
+// and converts it to a generic 400 "Something went wrong while processing
+// your request." — the explicit message never reaches the client. (See
+// main.pb.js's spam-guard comment which acknowledges this for event hooks
+// too.) `return e.json(status, body)` writes the response directly without
+// going through the recovery path, so the message survives. Every error
+// path below uses it; the try/catch blocks exist only to TRANSLATE thrown
+// JS errors (parse failures, PB SDK errors) into explicit JSON responses.
 routerAdd("POST", "/api/sage/gate-unlock", function (e) {
   // One-shot deploy canary inside the handler. console.log at module-top
-  // throws in PocketBase v0.36's JSVM at hooks-load time (silently — PB
-  // skips the whole module, which is how the route 404'd in v0.3.4).
-  // Inside the handler it's safe; the boolean keeps it to once per process.
+  // would throw at hooks-load time in PB v0.36 JSVM and silently drop the
+  // entire module (that's what 404'd v0.3.4). Inside the handler it's safe.
   if (!GATE_LOG_FIRED) {
     GATE_LOG_FIRED = true;
     console.log("[gate-unlock] hook v" + GATE_HOOK_VERSION + " — first request received");
   }
+  console.log("[gate-unlock] request from host=" + String(e.request.host || ""));
 
   // ─── Bind + validate the request body ───
   var data = new DynamicModel({ email: "", source: "" });
   try {
     e.bindBody(data);
   } catch (bindErr) {
-    throw new BadRequestError("Invalid request body.");
+    console.log("[gate-unlock] bindBody failed: " + bindErr);
+    return e.json(400, { ok: false, message: "Invalid request body." });
   }
 
   var email = String(data.email || "").trim().toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    throw new BadRequestError("Please enter a valid email address.");
+    return e.json(400, { ok: false, message: "Please enter a valid email address." });
   }
 
   var source = String(data.source || "").trim().substring(0, 100) || "sage.is";
 
-  // Host tracked for analytics + abuse detection, but no longer used to
-  // pick a cookie domain (we don't set cookies). Unknown hosts still get
-  // rejected as a defensive measure.
-  var host = String(e.request.host || "").toLowerCase();
-  if (host !== "pb.sage.is" && host !== "pb.sage.education") {
-    console.log("[gate-unlock] refusing unknown host: " + host);
-    throw new BadRequestError("Invalid host.");
-  }
-
   // ─── Upsert subscribers record ───
+  // findFirstRecordByData throws when the record doesn't exist — that's the
+  // signal to create. Any OTHER error during find (DB outage, schema issue)
+  // would also land in the catch and trigger a create attempt; if the
+  // create then errors with "email already exists" we know the original
+  // find failure was transient, and we return 503 to ask the client to
+  // retry. createErr therefore covers both genuine create failures AND
+  // the "find was actually a transient failure" case.
   var record;
   try {
     record = e.app.findFirstRecordByData("subscribers", "email", email);
@@ -72,15 +81,15 @@ routerAdd("POST", "/api/sage/gate-unlock", function (e) {
       record.set("tags", ["gate-unlock"]);
       record.set("unlocked_at", new Date().toISOString());
       record.set("verified", true);
-      // Random password placeholder — auth happens via the JWT we mint
+      // Random password placeholder — auth happens via the JWT minted
       // below, not via password. Phase 3 may enable passwords via a
       // separate self-service flow.
       record.setPassword($security.randomString(40));
       e.app.save(record);
-      console.log("[gate-unlock] new member: " + email + " (source=" + source + ", host=" + host + ")");
+      console.log("[gate-unlock] new member: " + email + " (source=" + source + ")");
     } catch (createErr) {
       console.log("[gate-unlock] subscriber create failed for " + email + ": " + createErr);
-      throw new ApiError(503, "Try again in a moment.", null);
+      return e.json(503, { ok: false, message: "Try again in a moment." });
     }
   }
 
@@ -88,7 +97,13 @@ routerAdd("POST", "/api/sage/gate-unlock", function (e) {
   // HS256 JWT signed with the collection's tokenKey. Duration is set in the
   // 003_subscribers migration (authToken.duration = 365 days). Rotating
   // tokenKey on a record invalidates all of that member's tokens.
-  var token = record.newAuthToken();
+  var token;
+  try {
+    token = record.newAuthToken();
+  } catch (tokenErr) {
+    console.log("[gate-unlock] token mint failed for " + email + ": " + tokenErr);
+    return e.json(503, { ok: false, message: "Try again in a moment." });
+  }
 
   return e.json(200, {
     ok: true,
