@@ -7,41 +7,35 @@
 // record, mints a PocketBase auth token, and returns it in the JSON body.
 //
 // Architecture: token-in-body, not Set-Cookie. The consumer site stores the
-// token in localStorage and the gate's read-path checks localStorage. This
-// is intentionally simpler than the cookie + cross-origin CORS dance — it
-// works under any vendor (Cloudflare, Pages, self-host) without needing
-// per-origin ACAO + Allow-Credentials. PB's default `*` CORS is fine because
-// we don't use credentialed fetch.
+// token in localStorage and the gate's read-path checks localStorage. PB's
+// default `*` CORS is fine because the fetch does not use `credentials:
+// include` — we never need per-origin Allow-Credentials. Works under any
+// vendor with any number of consumer domains.
 //
-// Trade-off: a localStorage token is XSS-readable. We accept that here
-// because the gate guards CONTENT, not payment or auth state. An attacker
-// who already has XSS on the consumer site can read anything the page can —
-// the gate token is not a meaningful escalation. If payments or sensitive
-// account actions get added in Phase 3, revisit this with HttpOnly cookies
-// behind a same-origin proxy.
+// Trade-off: a localStorage token is XSS-readable. Accepted here because the
+// gate guards CONTENT, not payment or auth state. Revisit if Phase 3 adds
+// payments or sensitive account actions — for those, run the endpoint behind
+// a same-origin proxy and switch to HttpOnly cookies.
+//
+// ─── Two PocketBase v0.36 JSVM gotchas this file works around ──────────────
+//
+// 1. NO module-top `var` declarations. PB v0.36's Goja runtime silently
+//    drops the entire module if you declare module-scope vars outside a
+//    hook callback — the route registers but the handler never fires, and
+//    every request returns the generic 400 with no log line. v0.3.5 hit
+//    this. All version constants and counters live inside the handler.
+//
+// 2. NO `throw` for HTTP errors. PB v0.36's routerAdd recovery middleware
+//    catches every thrown exception — including `new BadRequestError(…)` —
+//    and rewrites it to "Something went wrong while processing your request."
+//    400. Use `return e.json(status, body)` instead; that writes the
+//    response directly without going through recovery.
 
-var GATE_HOOK_VERSION = "0.4.2-no-throw";
-var GATE_LOG_FIRED = false;
-
-// Why no `throw` anywhere in this handler:
-// PocketBase v0.36's routerAdd recovery middleware catches any thrown
-// exception (including `new BadRequestError("…")` and `new ApiError(…)`)
-// and converts it to a generic 400 "Something went wrong while processing
-// your request." — the explicit message never reaches the client. (See
-// main.pb.js's spam-guard comment which acknowledges this for event hooks
-// too.) `return e.json(status, body)` writes the response directly without
-// going through the recovery path, so the message survives. Every error
-// path below uses it; the try/catch blocks exist only to TRANSLATE thrown
-// JS errors (parse failures, PB SDK errors) into explicit JSON responses.
 routerAdd("POST", "/api/sage/gate-unlock", function (e) {
-  // One-shot deploy canary inside the handler. console.log at module-top
-  // would throw at hooks-load time in PB v0.36 JSVM and silently drop the
-  // entire module (that's what 404'd v0.3.4). Inside the handler it's safe.
-  if (!GATE_LOG_FIRED) {
-    GATE_LOG_FIRED = true;
-    console.log("[gate-unlock] hook v" + GATE_HOOK_VERSION + " — first request received");
-  }
-  console.log("[gate-unlock] request from host=" + String(e.request.host || ""));
+  // One-line breadcrumb per request. PB v0.36 doesn't log routerAdd hits,
+  // so this is how we confirm the deploy + see what host PB sees behind
+  // Cloudflare/CapRover-nginx.
+  console.log("[gate-unlock v0.4.3] POST host=" + String(e.request.host || ""));
 
   // ─── Bind + validate the request body ───
   var data = new DynamicModel({ email: "", source: "" });
@@ -57,16 +51,13 @@ routerAdd("POST", "/api/sage/gate-unlock", function (e) {
     return e.json(400, { ok: false, message: "Please enter a valid email address." });
   }
 
-  var source = String(data.source || "").trim().substring(0, 100) || "sage.is";
+  var source = String(data.source || "").trim().substring(0, 100) || "unknown";
 
   // ─── Upsert subscribers record ───
   // findFirstRecordByData throws when the record doesn't exist — that's the
-  // signal to create. Any OTHER error during find (DB outage, schema issue)
-  // would also land in the catch and trigger a create attempt; if the
-  // create then errors with "email already exists" we know the original
-  // find failure was transient, and we return 503 to ask the client to
-  // retry. createErr therefore covers both genuine create failures AND
-  // the "find was actually a transient failure" case.
+  // signal to create. Any other find failure (DB outage, schema issue) also
+  // lands here and triggers a create attempt; if the create then fails with
+  // "email already exists" we return 503 so the client can retry.
   var record;
   try {
     record = e.app.findFirstRecordByData("subscribers", "email", email);
