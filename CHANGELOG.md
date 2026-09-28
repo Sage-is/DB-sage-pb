@@ -5,6 +5,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.3.7] — 2026-09-28
+
+### Added
+
+- **`plan_checks` collection** (`pb_migrations/004_plan_checks.js`) — shared checklist state for the sage.is `/plans/` decks (`src/_includes/components/plan-checklist.njk` in WEB-Sage.is). Fields: `page`, `item`, `label`, `checked`, `updated`. List/View public; Create/Update/Delete superusers only. Unique index on `(page, item)`. Migration-only release: no image or binary change.
+
 ## [0.3.2] — 2026-06-17
 
 ### Fixed
